@@ -20,6 +20,10 @@
 # production
 /build
 
+# unlock credentials (kept off the repo; see README)
+/creds/*
+!creds/.gitkeep
+
 # misc
 .DS_Store
 *.pem
