@@ -104,17 +104,3 @@ export async function POST(request: Request) {
   });
 }
 
-/**
- * GET /api/v1/unlock_challenge — lightweight service/health status (JSON).
- */
-export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
-  const sets = loadCredentialSets();
-  return NextResponse.json({
-    ok: true,
-    service: "android-things-unlocker",
-    method: "POST",
-    credentials_loaded: sets.length,
-  });
-}
