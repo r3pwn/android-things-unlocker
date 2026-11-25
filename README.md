@@ -14,9 +14,8 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you make changes.
+Open [http://localhost:3000](http://localhost:3000) with your browser — the
+unlock tool is the home page. The page auto-updates as you make changes.
 
 ## API: authenticated AVB unlock challenge-response
 
@@ -103,12 +102,7 @@ X-Credential-Format-Version: 1
 
 The struct layout is `format_version (u32 LE = 1)` + PIK certificate (1620
 bytes) + PUK certificate (1620 bytes) + PKCS#1 v1.5 / SHA-512 signature
-(256 bytes for a 2048-bit key). For the health/status check, `GET
-/api/v1/unlock_challenge` returns JSON:
-
-```json
-{ "ok": true, "service": "android-things-unlocker", "method": "POST", "credentials_loaded": 1 }
-```
+(256 bytes for a 2048-bit key).
 
 Errors return a JSON body `{ "ok": false, "error": <code>, "detail": ... }`
 with `400` (bad request), `401` (token, if configured), `404` (no credential
@@ -129,6 +123,58 @@ with no env overrides (so `.env` loads exactly like a deployment), and for
 every set drives the endpoint with a challenge built from the set's real PUK
 cert, verifying the returned struct byte-for-byte and the signature against
 the real PUK public key.
+
+## WebUSB unlock tool
+
+The home page (`/`) is a browser tool that performs the **device side**
+of the unlock
+without the `fastboot` CLI — a single card, in the spirit of the
+[LineageOS flash tool](https://download.lineageos.org/flash/fastboot).
+It speaks fastboot over
+[WebUSB](https://wicg.github.io/webusb/) using the
+[`android-fastboot`](https://www.npmjs.com/package/android-fastboot)
+package, and signs the challenge through the same-origin API. The PUK
+private key stays on the server — the browser only ever sees the 52-byte
+challenge and the signed credential.
+
+While no device is attached it shows "Waiting for fastboot device…"; when
+a fastboot device is connected (it auto-connects if one is already paired,
+or via the Connect button) it reports the serial and the lock state of
+both the verified-boot (AVB) and the standard bootloader, and offers the
+actions valid for that state:
+
+| action | command |
+| --- | --- |
+| AVB unlock | `oem at-get-vboot-unlock-challenge` → API → `stage` → `oem at-unlock-vboot` |
+| AVB re-lock | `oem at-lock-vboot` |
+| Bootloader unlock | `fastboot flashing unlock` |
+| Bootloader re-lock | `fastboot flashing lock` |
+
+State is read from the device: `getvar at-vboot-state`
+(`avb-locked=0/1`) for the AVB lock, and `getvar bootloader-locked`
+(with `warranty` as fallback) for the standard bootloader. After
+`flashing unlock`/`lock` the device reboots into fastboot; the tool waits
+for it to re-attach and re-reads the state.
+
+> **Warning:** the AVB re-lock action (`oem at-lock-vboot`) is gated behind
+> a confirmation dialog because re-locking verified boot while a non-stock
+> build is flashed can hard-brick some Android Things devices.
+
+Open it at `http://localhost:3000` (after `pnpm dev`) or on a deployed
+URL. Requirements:
+
+- **Chrome or Edge, over https (or `localhost`)** — WebUSB is a
+  secure-context-only API in those two browsers. The page shows a tag with
+  the WebUSB availability.
+- **The device in fastboot mode** — for the AVB unlock it must also be
+  *locked* (`at-get-vboot-unlock-challenge` is only available on a locked
+  device; the state tags tell you what the device is currently doing).
+- **The API loaded with at least one credential set** — the same
+  `UNLOCK_CREDENTIALS` as the CLI/API flow; the page shows how many sets
+  are loaded.
+- **Theming** — the UI follows the OS colour scheme: the antd light/dark
+  theme switches to match the page background (and live-updates if the
+  system setting changes).
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

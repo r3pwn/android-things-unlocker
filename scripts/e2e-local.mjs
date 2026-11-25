@@ -54,22 +54,30 @@ async function main() {
     const deadline = Date.now() + 150_000;
     while (Date.now() < deadline && !ready) {
       try {
-        const res = await fetch(`${BASE}/api/v1/unlock_challenge`);
-        const body = await res.json();
-        if (res.status === 200 && body.credentials_loaded === sets.length) {
+        // A random 52-byte challenge: 404 = credentials loaded (no match
+        // for a random product hash), 503 = none loaded.
+        const probe = Buffer.concat([
+          Buffer.from([1, 0, 0, 0]),
+          crypto.randomBytes(32),
+          crypto.randomBytes(16),
+        ]);
+        const res = await fetch(`${BASE}/api/v1/unlock_challenge`, {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: probe,
+        });
+        if (res.status === 404) {
           ready = true;
           console.log(
-            `server up, credentials_loaded=${body.credentials_loaded} (expected ${sets.length}) — .env path confirmed`,
+            `server up, credentials loaded (random challenge → 404, not 503) — .env path confirmed`,
           );
         } else {
-          console.log(
-            `health ${res.status} credentials_loaded=${body.credentials_loaded ?? "?"}`,
-          );
+          console.log(`health ${res.status}`);
         }
       } catch {}
       if (!ready) await new Promise((r) => setTimeout(r, 1_000));
     }
-    if (!ready) throw new Error("server did not report the .env credential count");
+    if (!ready) throw new Error("server did not come up with credentials loaded");
 
     let failures = 0;
     for (const set of sets) {

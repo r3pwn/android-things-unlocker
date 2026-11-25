@@ -133,9 +133,10 @@ async function waitForReady(base, timeoutMs, getLog, label = "dev server") {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${base}/api/v1/unlock_challenge`);
-      // Any routed response (including 503) means the handler is up.
-      if (res.status < 500 || res.status === 503) return;
+      // An empty-body POST → 400 (or 401/503) is enough: any routed
+      // response means the handler is up.
+      const res = await post(base, Buffer.alloc(0));
+      if (res.status < 500) return;
       res.body?.cancel();
     } catch {
       // not up yet
