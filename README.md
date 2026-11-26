@@ -1,6 +1,6 @@
-[![Unit tests](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml/badge.svg)](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml)
-
 # Android Things Bootloader Unlocker
+
+[![Unit tests](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml/badge.svg)](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml)
 
 An open-source companion for unlocking Android Things devices:
 
