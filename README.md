@@ -131,11 +131,11 @@ of the unlock
 without the `fastboot` CLI — a single card, in the spirit of the
 [LineageOS flash tool](https://download.lineageos.org/flash/fastboot).
 It speaks fastboot over
-[WebUSB](https://wicg.github.io/webusb/) using the
-[`android-fastboot`](https://www.npmjs.com/package/android-fastboot)
-package, and signs the challenge through the same-origin API. The PUK
-private key stays on the server — the browser only ever sees the 52-byte
-challenge and the signed credential.
+[WebUSB](https://wicg.github.io/webusb/) via a faithful in-browser port
+of the AOSP fastboot host (`lib/libfastboot.ts`), and signs the
+challenge through the same-origin API. The PUK private key stays on the
+server — the browser only ever sees the 52-byte challenge and the signed
+credential.
 
 While no device is attached it shows "Waiting for fastboot device…"; when
 a fastboot device is connected (it auto-connects if one is already paired,

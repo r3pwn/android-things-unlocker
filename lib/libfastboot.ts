@@ -4,12 +4,6 @@
  * fastboot_driver.cpp with the usb transport semantics of
  * usb_windows.cpp / usb_linux.cpp.
  *
- * Used in place of the `android-fastboot` package as a diagnostic
- * experiment: the stage (`download`) step is the crux of the WebUSB
- * unlock problem. If it parks here too — exactly as the hand-rolled
- * path did — the WebUSB host stack (NAK'd, parked bulk-OUT transfers)
- * is the cause; if it completes, the npm package was.
- *
  * Ported one-to-one:
  *   UsbTransport::Write  — one bulk-OUT of the whole buffer (AOSP: a
  *                          single AdbWriteEndpointSync /
@@ -61,7 +55,7 @@ const READ_CHUNK = 1024 * 1024;
 
 let debugLevel = 0;
 
-/** Mirrors the `android-fastboot` API (set to 2 for verbose). */
+/** 0 = errors only, 2 = verbose (every command + response). */
 export function setDebugLevel(level: number): void {
   debugLevel = level;
 }
@@ -321,9 +315,8 @@ export class FastbootDevice {
         logFastboot("note", "no paired fastboot device; opening picker");
         // Spec USBDeviceFilter has no deviceClass field —
         // classCode/subclassCode/protocolCode match the *interface*
-        // descriptor (the spec's bInterfaceClass/.../...). Same single
-        // filter as android-fastboot, so the picker only lists
-        // fastboot devices.
+        // descriptor (the spec's bInterfaceClass/.../...), so the
+        // picker only lists fastboot devices.
         const picked: unknown = await usb.requestDevice({
           filters: [
             { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 },
