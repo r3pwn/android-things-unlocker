@@ -34,6 +34,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Do not re-chunk the stage write.** The single continuous transfer is what works; every chunked/block-wise experiment parked at the FIFO boundary.
 - `libfastboot.connect()` never resets the device — a reset drops the bootloader's staged state.
 
+## UI
+
+- **antd components** are the UI kit. The antd theme **follows the OS colour scheme** (light/dark, live-updating on change) to match the page background.
+- The theme **starts light** on server + first client render so both produce identical class hashes (antd's CSS-in-JS changes them per algorithm); the real scheme is applied in an effect, deferred to a microtask before the first paint. Don't probe `matchMedia` synchronously in an effect (lint) or render the scheme server-side (hydration mismatch).
+
 ## API/UI constraints
 
 - `POST /api/v1/unlock_challenge` only: raw 52-byte body, raw credential out. No GET endpoint; no exposing the number of loaded credential sets to the UI; credentials via the `UNLOCK_CREDENTIALS` env var only.
