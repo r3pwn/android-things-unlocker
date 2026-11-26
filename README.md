@@ -175,6 +175,54 @@ Errors return a JSON body `{ "ok": false, "error": <code>, "detail": ... }`
 with `400` (bad request), `401` (token, if configured), `404` (no credential
 set matches the device), and `503` (no credentials loaded).
 
+### Sample exchange
+
+Request — the 52 raw bytes `fastboot get_staged` produces:
+
+```
+POST /api/v1/unlock_challenge
+Content-Type: application/octet-stream
+
+01 00 00 00
+51 1d 37 b1 ce d9 17 11 c8 15 58 ca 0a a6 9a c5 48 85 80 53
+95 16 68 88 c6 ce 80 36 8a 81 17 c0
+df bb c7 f2 3e 08 09 4c 15 42 7e 0d 47 9e ea 3c
+```
+
+| bytes | field |
+| --- | --- |
+| `01 00 00 00` | format version (u32 LE) |
+| the next 32 bytes | SHA-256 of the device's product ID |
+| the last 16 bytes | the device's random challenge data |
+
+Success response — the body is the raw `AvbCertUnlockCredential` struct
+(3500 bytes for a 2048-bit key):
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+X-Matched-Credential-Set: amber
+X-Credential-Format-Version: 1
+
+01 00 00 00
+<1620 bytes: PIK certificate>
+<1620 bytes: PUK certificate>
+<256 bytes: PKCS#1 v1.5 signature over SHA-512 of the 16 challenge bytes>
+```
+
+Error response — no credential set matches the device:
+
+```
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  "ok": false,
+  "error": "NO_MATCHING_CREDENTIALS",
+  "detail": "no credential set matches this device's product ID hash 511d37b1…"
+}
+```
+
 ## Testing
 
 - `pnpm test` — unit suite (vitest) for the credential-side protocol:
