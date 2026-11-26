@@ -243,6 +243,8 @@ Content-Type: application/json
 
 ## Deploy on Vercel (free tier)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fr3pwn%2Fandroid-things-unlocker)
+
 Vercel functions have no persistent filesystem, so the credentials live in
 an env var — the same `UNLOCK_CREDENTIALS` value `prepare-creds` produces:
 
