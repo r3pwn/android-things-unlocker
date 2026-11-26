@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a bug
+title: "Bug: "
+labels: [bug]
+body:
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Where was the issue discovered?
+      description: The Vercel-hosted site, or a self-hosted deployment?
+      options:
+        - Vercel-hosted site
+        - Self-hosted
+  - type: input
+    id: device
+    attributes:
+      label: Target device
+      description: The Android Things device being unlocked (e.g. "amber")
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: The firmware the device was running, if known
+  - type: input
+    id: browser
+    attributes:
+      label: Host browser & version
+      description: The browser used to run the tool (WebUSB requires Chrome or Edge)
+      placeholder: "e.g. Chrome 158"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        Browser console output (the tool logs the raw fastboot wire exchange),
+        API error responses, or anything else that helps reproduce the issue
+      render: text
