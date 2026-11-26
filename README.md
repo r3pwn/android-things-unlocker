@@ -36,16 +36,10 @@ changes.
 
 | path | what |
 | --- | --- |
-| `app/page.tsx` | the WebUSB unlock tool (the home page) |
-| `app/api/v1/unlock_challenge/` | the challenge-response API route |
-| `lib/avb-unlock.ts` | pure credential-side protocol logic (port of `at_auth_unlock.py`) |
-| `lib/credential-store.ts` | loads credential sets from `UNLOCK_CREDENTIALS` |
-| `lib/libfastboot.ts` | in-browser port of the AOSP fastboot host (WebUSB) |
-| `lib/fastboot-unlock.ts` | browser wrapper: the device-side unlock flow |
-| `scripts/prepare-creds.mjs` | parses the `creds/` zip bundles → `.env` |
-| `scripts/selftest.mjs` | end-to-end self-test with throwaway credentials |
-| `scripts/e2e-local.mjs` | end-to-end check against your *real* bundles |
-| `scripts/stage-cli.mjs` | node-usb (libusb) diagnostic mirror of the browser tool |
+| `app/` | the web app: the WebUSB unlock tool (home page) + the challenge-response API route (`/api/v1/unlock_challenge`) |
+| `lib/` | the protocol logic: credential-side signing (port of `at_auth_unlock.py`), credential-set loading from `UNLOCK_CREDENTIALS`, the in-browser port of the AOSP fastboot host (WebUSB), and the browser wrapper for the device-side unlock flow |
+| `scripts/` | `prepare-creds` (parses the `creds/` zip bundles → `.env`), `selftest` (end-to-end with throwaway credentials), `e2e-local` (end-to-end against your *real* bundles), `stage-cli` (node-usb diagnostic mirror of the browser tool) |
+| `creds/` | (gitignored) the Developer Console zip bundles dropped here for `prepare-creds` |
 
 ## WebUSB unlock tool
 
