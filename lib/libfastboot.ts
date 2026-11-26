@@ -75,7 +75,7 @@ export function hexBytes(bytes: Uint8Array, cap = 128): string {
   return out;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("timed out")), ms);
     p.then(

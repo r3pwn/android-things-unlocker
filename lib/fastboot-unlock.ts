@@ -17,6 +17,7 @@
 import {
   logFastboot,
   setDebugLevel,
+  withTimeout,
   FastbootDevice,
 } from "@/lib/libfastboot";
 import { CHALLENGE_STRUCT_SIZE } from "@/lib/avb-unlock";
@@ -91,22 +92,6 @@ export function webUsbAvailable(): boolean {
 }
 
 const RECONNECT_TIMEOUT_MS = 120_000;
-
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("timed out")), ms);
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
 
 /**
  * The bulk endpoint's maxPacketSize (diagnostic only — the staging
