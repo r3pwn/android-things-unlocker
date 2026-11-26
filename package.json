@@ -12,6 +12,7 @@
     "stage:cli": "node scripts/stage-cli.mjs"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.4",
     "antd": "^6.7.2",
     "jszip": "^3.10.2",
     "next": "16.2.4",

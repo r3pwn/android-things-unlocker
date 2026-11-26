@@ -16,6 +16,7 @@ import {
   theme,
   Typography,
 } from "antd";
+import { GithubOutlined } from "@ant-design/icons";
 import {
   connectFastboot,
   webUsbAvailable,
@@ -626,6 +627,17 @@ function UnlockTool() {
           </div>
         )}
       </Card>
+
+      <Button
+        type="link"
+        href="https://github.com/r3pwn/android-things-unlocker"
+        target="_blank"
+        rel="noreferrer"
+        icon={<GithubOutlined />}
+        style={{ marginTop: 16, paddingInline: 0 }}
+      >
+        View on GitHub
+      </Button>
     </div>
   );
 }
