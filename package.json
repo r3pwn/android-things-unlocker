@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
     "prepare-creds": "node scripts/prepare-creds.mjs",
     "stage:cli": "node scripts/stage-cli.mjs"
   },
@@ -26,7 +27,8 @@
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "usb": "^2.19.2"
+    "usb": "^2.19.2",
+    "vitest": "^5.1.1"
   },
   "packageManager": "pnpm@12.23.0+sha512.02da94ffaf133f46074322afe552f90d40b5f71ae259aefbccdacc5085b1d617e98d65e0131f5748b9b67445978ee5055d7d59a473f1eef0d504854fefcd5975"
 }
