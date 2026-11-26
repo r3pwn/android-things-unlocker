@@ -400,10 +400,10 @@ function UnlockTool() {
   return (
     <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 64px" }}>
       <Typography.Title level={3} style={{ marginTop: 0 }}>
-        Android Things — unlock tool
+        Android Things — bootloader unlock tool
       </Typography.Title>
       <Typography.Paragraph type="secondary">
-        Fastboot over WebUSB, with server-side unlock code generation.
+        Uses fastboot over WebUSB, with server-side unlock code generation.
       </Typography.Paragraph>
 
       <Tag

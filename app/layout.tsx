@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Android Things — authenticated AVB unlock",
+  title: "Android Things - Bootloader unlock tool",
   description:
-    "Challenge-response API and browser tool for the Android Things authenticated AVB unlock, with server-side signing.",
+    "Uses fastboot over WebUSB, with server-side unlock code generation.",
 };
 
 export default function RootLayout({
