@@ -146,7 +146,7 @@ actions valid for that state:
 | action | command |
 | --- | --- |
 | AVB unlock | `oem at-get-vboot-unlock-challenge` → API → `stage` → `oem at-unlock-vboot` |
-| AVB re-lock | `oem at-lock-vboot` |
+| AVB re-lock | `oem at-lock-vboot!` |
 | Bootloader unlock | `fastboot flashing unlock` |
 | Bootloader re-lock | `fastboot flashing lock` |
 
@@ -156,7 +156,7 @@ State is read from the device: `getvar at-vboot-state`
 `flashing unlock`/`lock` the device reboots into fastboot; the tool waits
 for it to re-attach and re-reads the state.
 
-> **Warning:** the AVB re-lock action (`oem at-lock-vboot`) is gated behind
+> **Warning:** the AVB re-lock action (`oem at-lock-vboot!`) is gated behind
 > a confirmation dialog because re-locking verified boot while a non-stock
 > build is flashed can hard-brick some Android Things devices.
 
