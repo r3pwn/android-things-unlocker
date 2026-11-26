@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     return errorResponse(
       503,
       "NO_CREDENTIALS",
-      "no unlock credential sets are loaded; set the UNLOCK_CREDENTIALS env var (run \"npm run prepare-creds\", or see the README for Vercel)",
+      "no unlock credential sets are loaded; set the UNLOCK_CREDENTIALS env var (run \"pnpm run prepare-creds\", or see the README for Vercel)",
     );
   }
 

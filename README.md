@@ -1,138 +1,56 @@
 [![Unit tests](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml/badge.svg)](https://github.com/r3pwn/android-things-unlocker/actions/workflows/tests.yml)
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Android Things unlocker
+
+An open-source companion for unlocking Android Things devices:
+
+- **`/`** — a browser tool that talks fastboot to the device over
+  [WebUSB](https://wicg.github.io/webusb/) and performs the device side
+  of the unlock (AVB + standard bootloader, unlock / re-lock), modelled
+  on the [LineageOS flash tool](https://download.lineageos.org/flash/fastboot).
+- **`POST /api/v1/unlock_challenge`** — the credential side of the
+  authenticated-AVB unlock protocol, a port of
+  [`at_auth_unlock.py`](https://android.googlesource.com/platform/external/avb/+/master/tools/at_auth_unlock.py):
+  send it the device's 52-byte unlock challenge and it returns the
+  signed `AvbCertUnlockCredential` struct.
+
+The unlock credentials are **yours** — the zip bundles downloaded from
+the Android Things Developer Console — and are never part of this
+repository: they live in a gitignored `.env` locally and in an env var
+(a Vercel *Secret*) when deployed. The PUK private key stays on the
+server; the browser and the wire only ever see the 52-byte challenge
+and the signed credential.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser — the
-unlock tool is the home page. The page auto-updates as you make changes.
+Open [http://localhost:3000](http://localhost:3000) with your browser —
+the unlock tool is the home page. The page auto-updates as you make
+changes.
 
-## API: authenticated AVB unlock challenge-response
+## Project layout
 
-`POST /api/v1/unlock_challenge` implements the credential side of the Android
-Things authenticated AVB unlock protocol, as defined by
-[`at_auth_unlock.py`](https://android.googlesource.com/platform/external/avb/+/master/tools/at_auth_unlock.py).
-It replaces everything between `fastboot get_staged` and `fastboot stage`
-in that script: you send it the unlock challenge from the device, and it
-returns the signed `AvbCertUnlockCredential` struct.
-
-### Credentials
-
-The unlock credentials are **never part of this repository**. The single
-source is the `UNLOCK_CREDENTIALS` env var (a JSON array, one object per
-set), which works identically locally and on serverless hosts:
-
-1. Drop the **zip bundles exactly as downloaded** from the Android Things
-   Developer Console into `creds/` (gitignored, no extraction needed).
-2. Run `npm run prepare-creds`. It parses every `creds/*.zip` and writes the
-   `UNLOCK_CREDENTIALS` value to `.env` (gitignored).
-3. `npm run dev` — Next.js loads `.env` automatically, and the endpoint is
-   ready.
-
-Each bundle holds the three credential files:
-
-| file | pattern | what it is |
-| --- | --- | --- |
-| PIK certificate | `pik_certificate.*.bin` | 1620-byte `AvbCertCertificate` |
-| PUK certificate | `puk_certificate.*.bin` | 1620-byte `AvbCertCertificate` |
-| PUK private key | `puk.*.pem` | RSA private key (PKCS#1 or PKCS#8) |
-
-Each set's `name` (reported in `X-Matched-Credential-Set`) is the device
-codename derived from the bundle filename — `amber-unlock_credentials.zip`
-or `cube_unlock_credentials.zip` becomes `amber` / `cube`.
-
-Sets are matched to the device by the product ID: the PUK certificate's
-subject is the SHA-256 hash of the product ID, which is also carried in the
-challenge — exactly like `SelectMatchingUnlockCredential` in the reference
-tool. The PUK private key is the only secret; it is used server-side to sign
-and never appears in any response.
-
-> Note: the Developer Console bundles carry a slightly inconsistent zip
-> metadata field that some parsers reject; `prepare-creds` repairs it
-> transparently before parsing.
-
-Optionally set `UNLOCK_API_TOKEN` to require
-`Authorization: Bearer <token>` on all requests.
-
-### Request
-
-The request body is the **raw 52-byte `AvbCertUnlockChallenge` struct** —
-no encoding, exactly what `fastboot get_staged` produces. The whole unlock
-is a clean binary pipe:
-
-```bash
-# 1. Get the challenge from the device
-fastboot oem at-get-vboot-unlock-challenge
-fastboot get_staged challenge.bin
-
-# 2. Send the raw struct, save the raw credential struct
-#    (add `-H "Authorization: Bearer <token>" if UNLOCK_API_TOKEN is set)
-curl -s localhost:3000/api/v1/unlock_challenge \
-  --data-binary @challenge.bin -o unlock_credential.bin
-
-# 3. Stage it and unlock, as the reference tool does
-fastboot stage unlock_credential.bin
-fastboot oem at-unlock-vboot
-```
-
-### Response
-
-On success the body is the **raw `AvbCertUnlockCredential` struct** — the
-exact byte sequence the reference tool writes to disk and stages. Metadata
-is carried in headers, not the body:
-
-```
-HTTP/1.1 200 OK
-Content-Type: application/octet-stream
-X-Matched-Credential-Set: amber
-X-Credential-Format-Version: 1
-
-<raw AvbCertUnlockCredential struct bytes>
-```
-
-The struct layout is `format_version (u32 LE = 1)` + PIK certificate (1620
-bytes) + PUK certificate (1620 bytes) + PKCS#1 v1.5 / SHA-512 signature
-(256 bytes for a 2048-bit key).
-
-Errors return a JSON body `{ "ok": false, "error": <code>, "detail": ... }`
-with `400` (bad request), `401` (token, if configured), `404` (no credential
-set matches the device), and `503` (no credentials loaded).
-
-### Self-test
-
-`node scripts/selftest.mjs` starts two dev servers (one with no credentials,
-one with `UNLOCK_CREDENTIALS` set to two throwaway sets — fake 1620-byte
-certificates + fresh RSA keys), exercises the endpoint end-to-end, and
-cryptographically verifies the returned struct. It is isolated from any local
-`.env` (it sets the env vars explicitly, which `.env` never overrides) and
-cleans up after itself.
-
-`node scripts/e2e-local.mjs` is a manual verification against the *real*
-bundles: it reads `.env` (after `npm run prepare-creds`), starts a dev server
-with no env overrides (so `.env` loads exactly like a deployment), and for
-every set drives the endpoint with a challenge built from the set's real PUK
-cert, verifying the returned struct byte-for-byte and the signature against
-the real PUK public key.
+| path | what |
+| --- | --- |
+| `app/page.tsx` | the WebUSB unlock tool (the home page) |
+| `app/api/v1/unlock_challenge/` | the challenge-response API route |
+| `lib/avb-unlock.ts` | pure credential-side protocol logic (port of `at_auth_unlock.py`) |
+| `lib/credential-store.ts` | loads credential sets from `UNLOCK_CREDENTIALS` |
+| `lib/libfastboot.ts` | in-browser port of the AOSP fastboot host (WebUSB) |
+| `lib/fastboot-unlock.ts` | browser wrapper: the device-side unlock flow |
+| `scripts/prepare-creds.mjs` | parses the `creds/` zip bundles → `.env` |
+| `scripts/selftest.mjs` | end-to-end self-test with throwaway credentials |
+| `scripts/e2e-local.mjs` | end-to-end check against your *real* bundles |
+| `scripts/stage-cli.mjs` | node-usb (libusb) diagnostic mirror of the browser tool |
 
 ## WebUSB unlock tool
 
-The home page (`/`) is a browser tool that performs the **device side**
-of the unlock
-without the `fastboot` CLI — a single card, in the spirit of the
-[LineageOS flash tool](https://download.lineageos.org/flash/fastboot).
-It speaks fastboot over
+The home page (`/`) performs the **device side** of the unlock without
+the `fastboot` CLI. It speaks fastboot over
 [WebUSB](https://wicg.github.io/webusb/) via a faithful in-browser port
 of the AOSP fastboot host (`lib/libfastboot.ts`), and signs the
 challenge through the same-origin API. The PUK private key stays on the
@@ -172,31 +90,123 @@ URL. Requirements:
   *locked* (`at-get-vboot-unlock-challenge` is only available on a locked
   device; the state tags tell you what the device is currently doing).
 - **The API loaded with at least one credential set** — the same
-  `UNLOCK_CREDENTIALS` as the CLI/API flow; the page shows how many sets
-  are loaded.
-- **Theming** — the UI follows the OS colour scheme: the antd light/dark
-  theme switches to match the page background (and live-updates if the
-  system setting changes).
+  `UNLOCK_CREDENTIALS` as the CLI/API flow below.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API: authenticated AVB unlock challenge-response
 
-## Learn More
+`POST /api/v1/unlock_challenge` replaces everything between
+`fastboot get_staged` and `fastboot stage` in the reference tool: you
+send it the unlock challenge from the device, and it returns the signed
+`AvbCertUnlockCredential` struct.
 
-To learn more about Next.js, take a look at the following resources:
+### Credentials
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The unlock credentials are **never part of this repository**. The single
+source is the `UNLOCK_CREDENTIALS` env var (a JSON array, one object per
+set), which works identically locally and on serverless hosts:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Drop the **zip bundles exactly as downloaded** from the Android Things
+   Developer Console into `creds/` (gitignored, no extraction needed).
+2. Run `pnpm run prepare-creds`. It parses every `creds/*.zip` and writes the
+   `UNLOCK_CREDENTIALS` value to `.env` (gitignored).
+3. `pnpm dev` — Next.js loads `.env` automatically, and the endpoint is
+   ready.
+
+Each bundle holds the three credential files:
+
+| file | pattern | what it is |
+| --- | --- | --- |
+| PIK certificate | `pik_certificate.*.bin` | 1620-byte `AvbCertCertificate` |
+| PUK certificate | `puk_certificate.*.bin` | 1620-byte `AvbCertCertificate` |
+| PUK private key | `puk.*.pem` | RSA private key (PKCS#1 or PKCS#8) |
+
+Each set's `name` (reported in `X-Matched-Credential-Set`) is the device
+codename derived from the bundle filename — `amber-unlock_credentials.zip`
+or `cube_unlock_credentials.zip` becomes `amber` / `cube`.
+
+Sets are matched to the device by the product ID: the PUK certificate's
+subject is the SHA-256 hash of the product ID, which is also carried in the
+challenge — exactly like `SelectMatchingUnlockCredential` in the reference
+tool. The PUK private key is the only secret; it is used server-side to sign
+and never appears in any response.
+
+> Note: the Developer Console bundles carry a slightly inconsistent zip
+> metadata field that some parsers reject; `prepare-creds` repairs it
+> transparently before parsing.
+
+Optionally set `UNLOCK_API_TOKEN` to require
+`Authorization: Bearer <token>` on all requests.
+
+### Request
+
+The request body is the **raw 52-byte `AvbCertUnlockChallenge` struct** —
+no encoding, exactly what `fastboot get_staged` produces. The whole unlock
+is a clean binary pipe:
+
+```bash
+# 1. Get the challenge from the device
+fastboot oem at-get-vboot-unlock-challenge
+fastboot get_staged challenge.bin
+
+# 2. Send the raw struct, save the raw credential struct
+#    (add `-H "Authorization: Bearer <token>"` if UNLOCK_API_TOKEN is set)
+curl -s localhost:3000/api/v1/unlock_challenge \
+  --data-binary @challenge.bin -o unlock_credential.bin
+
+# 3. Stage it and unlock, as the reference tool does
+fastboot stage unlock_credential.bin
+fastboot oem at-unlock-vboot
+```
+
+### Response
+
+On success the body is the **raw `AvbCertUnlockCredential` struct** — the
+exact byte sequence the reference tool writes to disk and stages. Metadata
+is carried in headers, not the body:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+X-Matched-Credential-Set: amber
+X-Credential-Format-Version: 1
+
+<raw AvbCertUnlockCredential struct bytes>
+```
+
+The struct layout is `format_version (u32 LE = 1)` + PIK certificate (1620
+bytes) + PUK certificate (1620 bytes) + PKCS#1 v1.5 / SHA-512 signature
+(256 bytes for a 2048-bit key).
+
+Errors return a JSON body `{ "ok": false, "error": <code>, "detail": ... }`
+with `400` (bad request), `401` (token, if configured), `404` (no credential
+set matches the device), and `503` (no credentials loaded).
+
+## Testing
+
+- `pnpm test` — unit suite (vitest) for the credential-side protocol:
+  struct parsing and layout, certificate subject extraction, key
+  validation, and the signature verified against the PUK public key.
+  Runs in CI on every push/PR to `main`.
+- `node scripts/selftest.mjs` — end-to-end test of the endpoint with
+  throwaway credentials (fake 1620-byte certificates + fresh RSA keys):
+  `503` with no env var, the `400` request-validation paths, a
+  byte-for-byte + cryptographic check of a served set, and `404` for an
+  unknown product ID. Isolated from any local `.env` (it sets the env
+  vars explicitly, which `.env` never overrides).
+- `node scripts/e2e-local.mjs` — the same, but against the *real*
+  Developer Console bundles in your `.env` (after
+  `pnpm run prepare-creds`): for every set it drives the endpoint with a
+  challenge built from the set's real PUK cert and verifies the returned
+  struct byte-for-byte and the signature against the real PUK public key.
 
 ## Deploy on Vercel (free tier)
 
 Vercel functions have no persistent filesystem, so the credentials live in
 an env var — the same `UNLOCK_CREDENTIALS` value `prepare-creds` produces:
 
-1. `npm run prepare-creds -- --vercel --print` — validates the value fits
+1. `pnpm run prepare-creds -- --vercel --print` — validates the value fits
    Vercel's budget (exits 1 if not, without writing `.env`) and prints it.
-   Plain `npm run prepare-creds` only *warns* when over budget, since the
+   Plain `pnpm run prepare-creds` only *warns* when over budget, since the
    value is still valid for local use regardless of size.
 2. Vercel dashboard → Project → Settings → **Environment Variables** → add
    `UNLOCK_CREDENTIALS` with type **Secret** (encrypted at rest, cannot be
@@ -207,7 +217,7 @@ an env var — the same `UNLOCK_CREDENTIALS` value `prepare-creds` produces:
 Budget: Vercel's total env-var limit is **64 KB per deployment** (all
 plans, shared across *all* env vars). A 2048-bit bundle is roughly 8 KB,
 so this comfortably fits about 8 credential sets; beyond that, self-host
-(the app is a plain Next.js app — `npm run build && npm start` — with the
+(the app is a plain Next.js app — `pnpm build && pnpm start` — with the
 same env var).
 
 The private key stays on Vercel and never appears in any response; the
