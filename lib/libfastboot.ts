@@ -4,40 +4,35 @@
  * fastboot_driver.cpp with the usb transport semantics of
  * usb_windows.cpp / usb_linux.cpp.
  *
- * Ported one-to-one:
- *   UsbTransport::Write  — one bulk-OUT of the whole buffer (AOSP: a
- *                          single AdbWriteEndpointSync /
- *                          usb_bulk_transfer call; no chunking, no
- *                          re-poll, no ZLP — "ioctl on 0-length buffer
- *                          causes freezing")
- *   UsbTransport::Read   — one bulk-IN of the requested size (a short
- *                          read is an error, as in AOSP's ReadBuffer)
- *   RawCommand           — one write of the exact command bytes (no
- *                          trailing newline), then HandleResponse
- *   DownloadCommand      — "download:%08x" (8-hex, zero-padded)
- *   SendBuffer           — one write of the whole buffer
- *   HandleResponse       — read loop of FB_RESPONSE_SZ (256) within a
- *                          30 s window (RESP_TIMEOUT); the timer
- *                          resets on INFO/TEXT; OKAY/FAIL/DATA end it
- *   RunAndReadBuffer     — "upload" -> DATA<size> -> read exactly
- *                          `size` bytes (1 MiB chunks) ->
- *                          HandleResponse. No host "OKAY" is sent
- *                          (AOSP doesn't; the device sends its final
- *                          status itself)
- *   usb_open             — enumerate, match interface 0xff/0x42/0x03
- *                          (two endpoints: bulk in + bulk out), open
- *                          the default bulk pipes; never reset (AOSP's
- *                          Windows Reset() is unsupported, and a reset
- *                          would drop the bootloader's staged state)
+ * Ported one-to-one (one transfer per call — no chunking, no re-poll,
+ * no ZLP — "ioctl on 0-length buffer causes freezing"):
+ *   UsbTransport::Write/Read  one bulk-OUT / bulk-IN of the whole
+ *                            buffer (a short read is an error, as in
+ *                            ReadBuffer)
+ *   RawCommand                one write of the exact command bytes (no
+ *                            trailing newline), then HandleResponse
+ *   DownloadCommand           "download:%08x" (8-hex, zero-padded),
+ *                            SendBuffer, then the device's final status
+ *   RunAndReadBuffer          "upload" -> DATA<size> -> read exactly
+ *                            `size` bytes (1 MiB chunks) ->
+ *                            HandleResponse. No host "OKAY" is sent
+ *                            (AOSP doesn't; the device sends its final
+ *                            status itself)
+ *   HandleResponse            256-byte status reads within a 30 s
+ *                            window, resetting on INFO/TEXT;
+ *                            OKAY/FAIL/DATA end it
+ *   usb_open                  match interface 0xff/0x42/0x03 (bulk in +
+ *                            out), open the default pipes; never reset
+ *                            (a reset would drop the bootloader's
+ *                            staged state)
  *
- * Non-AOSP (the tool's safety layer): every transfer is time-boxed
- * (aborted via the WebUSB EventTarget API when available) so a
- * desynced device fails with a clear error instead of hanging the tool
- * forever; console tracing of the raw wire exchange; the reconnect
- * wait.
+ * Non-AOSP (safety layer): every transfer is time-boxed (aborted via
+ * the WebUSB EventTarget API when available) so a desynced device
+ * fails with a clear error instead of hanging the tool; console
+ * tracing of the raw wire exchange; the reconnect wait.
  *
- * BROWSER ONLY: imported dynamically from fastboot-unlock.ts, so this
- * module is never evaluated outside the browser.
+ * SSR-safe: no top-level browser access, so it can be imported from
+ * "use client" modules without a dynamic import.
  */
 
 /** AOSP fastboot_driver.h: FB_RESPONSE_SZ. */
@@ -293,11 +288,8 @@ export class FastbootDevice {
   /**
    * AOSP's usb_open: enumerate the granted devices, match
    * 0xff/0x42/0x03, open the interface and its default bulk pipes.
-   * Never resets the device (AOSP's Windows Reset() is unsupported; a
-   * reset would also drop the bootloader's staged state).
-   *
-   * `{ auto: true }`: the caller has already verified that exactly one
-   * device is granted — take it without prompting.
+   * Never resets (a reset would drop the bootloader's staged state).
+   * `{ auto: true }`: take the single granted device without prompting.
    */
   async connect(opts?: { auto?: boolean }): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -384,9 +376,8 @@ export class FastbootDevice {
 
   /**
    * AOSP transport Write/Read, ported: one WebUSB transfer per call —
-   * no chunking, no re-poll. (A NAK'd transfer stays parked until the
-   * device re-arms or the tool's window expires; that is exactly what
-   * the experiment is testing.)
+   * no chunking, no re-poll (a NAK'd transfer stays parked until the
+   * device re-arms or the time-box expires).
    */
   private async writeRaw(
     data: Uint8Array,

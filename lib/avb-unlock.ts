@@ -1,19 +1,15 @@
 /**
  * Pure protocol logic for the Android Things authenticated AVB unlock
- * challenge-response, a faithful port of the credential side of
- * `at_auth_unlock.py` (avb repo, `tools/`):
+ * challenge-response — the credential side of
+ * [`at_auth_unlock.py`](https://android.googlesource.com/platform/external/avb/+/master/tools/at_auth_unlock.py)
+ * (avb repo, `tools/`). The fastboot interaction (staging the
+ * credential, `at-unlock-vboot`) stays on the client side, matching the
+ * reference tool's split.
  *
- *   https://android.googlesource.com/platform/external/avb/+/master/tools/at_auth_unlock.py
- *
- * Only the credential generation is reimplemented here; the fastboot
- * interaction (staging the credential, calling `at-unlock-vboot`) stays on
- * the client side, matching the reference tool's split.
- *
- * The PUK private key is the only secret in a credential set. It is used
- * locally to produce the signature and never leaves this module, so the
- * response to a client is safe to return: it contains only the public
- * certificates and a signature that is only valid for the specific
- * challenge it was computed for.
+ * The PUK private key is the only secret: it produces the signature
+ * locally and never leaves this module, so a response (public
+ * certificates + a signature valid only for its specific challenge) is
+ * safe to return to a client.
  */
 import { createPrivateKey, createSign } from "node:crypto";
 import type { KeyObject } from "node:crypto";
@@ -114,9 +110,9 @@ export function certSubject(cert: Buffer): Buffer {
 }
 
 /**
- * Validates a credential set and derives its product ID hash from the PUK
- * certificate. Fails at load time (not request time) on bad certificates
- * or a non-private key, mirroring the `UnlockCredentials` constructor checks.
+ * Validates a credential set (fail at load time, not request time) and
+ * derives its product ID hash from the PUK certificate; a non-private
+ * key is rejected, mirroring the `UnlockCredentials` constructor checks.
  */
 export function createCredentialSet(
   name: string,
@@ -158,17 +154,13 @@ export function createCredentialSet(
 /**
  * Builds the `AvbCertUnlockCredential` struct, mirroring
  * `MakeCertUnlockCredential`:
+ *   struct.pack('<I', 1) + intermediate_cert (1620 B) + unlock_cert
+ *   (1620 B) + PKCS#1 v1.5 signature over SHA-512(challenge_data)
  *
- *   struct.pack('<I', 1)  # Format Version
- *   + intermediate_cert    # PIK certificate (1620 bytes)
- *   + unlock_cert          # PUK certificate (1620 bytes)
- *   + signature            # PKCS#1 v1.5 over SHA-512(challenge_data)
- *
- * The signature is produced with the PUK private key. This is the exact
- * equivalent of the reference tool's
- * `PKCS1_v1_5.new(rsa_key).sign(SHA512.new(challenge_data))`:
- * `crypto.createSign('sha512')` hashes the challenge data with SHA-512 and
- * applies PKCS#1 v1.5 padding (including the SHA-512 DigestInfo prefix).
+ * `crypto.createSign('sha512')` is the exact equivalent of the
+ * reference tool's `PKCS1_v1_5.new(rsa_key).sign(SHA512.new(...))`
+ * (SHA-512 hashing + PKCS#1 v1.5 padding, including the DigestInfo
+ * prefix).
  */
 export function makeUnlockCredential(
   set: UnlockCredentialSet,

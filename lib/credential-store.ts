@@ -1,22 +1,20 @@
 /**
- * Loads Android Things unlock credential sets at runtime, so the (secret)
- * credentials are never part of the repository.
+ * Loads Android Things unlock credential sets at runtime, so the
+ * (secret) credentials are never part of the repository.
  *
- * The single source is the `UNLOCK_CREDENTIALS` env var: a JSON array, one
- * object per set:
+ * The single source is the `UNLOCK_CREDENTIALS` env var: a JSON array,
+ * one object per set:
  *
  *   [ { "name": "amber",
  *       "pik":     "<base64 of pik_certificate.*.bin>",
  *       "pukCert": "<base64 of puk_certificate.*.bin>",
  *       "puk":     "<PEM of puk.*.pem>" } ]
  *
- * This works identically on serverless hosts (Vercel, where functions have
- * no writable/persistent filesystem) and locally: `npm run prepare-creds`
- * parses the Developer Console zip bundles in `creds/` and writes this
- * value to `.env` (gitignored), which Next.js loads on `npm run dev`. On
- * Vercel the same value is pasted into a `UNLOCK_CREDENTIALS` Secret.
- *
- * The value contains the PUK private key. Keep it secret.
+ * `scripts/prepare-creds.mjs` parses the Developer Console zip bundles
+ * in `creds/` and writes this value to `.env` (gitignored), which
+ * Next.js loads on `pnpm dev`; on Vercel the same value is pasted
+ * into a `UNLOCK_CREDENTIALS` Secret. Works identically serverless and
+ * locally. The value contains the PUK private key — keep it secret.
  */
 import {
   createCredentialSet,

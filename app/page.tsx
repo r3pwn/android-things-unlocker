@@ -27,28 +27,21 @@ import {
 
 /**
  * WebUSB unlock tool for the Android Things authenticated AVB unlock.
- *
- * One page, one card (modelled on the LineageOS flash tool). While no
+ * One page, one card (modelled on the LineageOS flash tool): while no
  * device is attached it waits; once a fastboot device is connected it
  * reports the AVB + standard-bootloader lock state and the serial, and
- * offers the actions that are valid for that state:
- *
- *   AVB unlock      — the at_auth_unlock.py flow: read the challenge,
- *                     sign it via the same-origin API, stage the
- *                     credential, `oem at-unlock-vboot`
- *   AVB re-lock     — `oem at-lock-vboot!`
- *   bootloader unlock  — `fastboot flashing unlock`
- *   bootloader re-lock — `fastboot flashing lock`
- *
- * Signing happens on the server, so the PUK private key never reaches
- * the browser; this page only ever sees the challenge and the signed
- * credential.
+ * offers the actions valid for that state (AVB unlock — the
+ * at_auth_unlock.py flow: read the challenge, sign it via the
+ * same-origin API, stage the credential, `oem at-unlock-vboot`; AVB
+ * re-lock — `oem at-lock-vboot!`; bootloader unlock/re-lock —
+ * `fastboot flashing unlock`/`lock`). Signing happens on the server,
+ * so the PUK private key never reaches the browser.
  *
  * Structure: UnlockPage (the exported default) owns the OS colour-scheme
  * detection and provides the antd theme + App context. All the tool
- * logic lives in UnlockTool, which is rendered INSIDE <AntApp> — the
- * useApp() hook can only consume the App context from a descendant, so
- * the message/modal handlers must live there.
+ * logic lives in UnlockTool, rendered INSIDE <AntApp> — useApp() can
+ * only consume the App context from a descendant, so the message/modal
+ * handlers must live there.
  */
 
 type BusyAction =

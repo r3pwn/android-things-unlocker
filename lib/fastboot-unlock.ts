@@ -1,37 +1,15 @@
 /**
- * Browser-only wrapper around `libfastboot` (the AOSP-faithful WebUSB
- * port of the AOSP fastboot host) for the WebUSB unlock tool.
- * Implements the device side of the Android Things
- * authenticated-AVB-unlock (the mirror image of `at_auth_unlock.py`'s
- * fastboot calls) plus the standard bootloader lock/unlock:
- *
- *   connect()                  — open the fastboot USB device
- *   getState()                — serial, product, bootloader version, and
- *                              the AVB + standard-bootloader lock state
- *   getChallenge()            — `oem at-get-vboot-unlock-challenge` +
- *                              read the staged 52-byte
- *                              AvbCertUnlockChallenge
- *   stageCredential(bytes)    — `fastboot stage <credential>`
- *   unlockVboot()            — `oem at-unlock-vboot`
- *   relockVboot()            — `oem at-lock-vboot!`
- *   bootloaderUnlock()       — `fastboot flashing unlock` + wait for the
- *                              device to reboot back into fastboot
- *   bootloaderRelock()       — `fastboot flashing lock` + wait for the
- *                              device to reboot back into fastboot
+ * Browser-only wrapper around `libfastboot` for the WebUSB unlock
+ * tool: the device side of the Android Things authenticated-AVB
+ * unlock (mirrors `at_auth_unlock.py`'s fastboot calls) plus the
+ * standard bootloader lock/unlock — see `FastbootSession` for the
+ * operations.
  *
  * State variables (verified against a real MT8167 "amber" device):
- *   getvar at-vboot-state     -> "avb-locked=0" (unlocked) / "avb-locked=1"
- *   getvar bootloader-locked  -> "1" (locked) / "0" (unlocked)
- *   getvar warranty / unlocked-> boolean-ish ("yes"/"true" = unlocked,
- *                              fallbacks when `bootloader-locked` is absent)
- *
- * The `getChallenge()` staged-data read (the fastboot protocol "upload"
- * exchange, device -> host) and the `stageCredential()` write (the
- * "download"/`stage` exchange, host -> device) both go through
- * libfastboot's AOSP-faithful implementations: "upload" -> device
- * replies "DATA<8-hex>" + the bytes -> the device's final "OKAY";
- * "download:%08x" -> one continuous write of the whole buffer -> the
- * device's final "OKAY".
+ *   getvar at-vboot-state    -> "avb-locked=0" (unlocked) / "avb-locked=1"
+ *   getvar bootloader-locked -> "1" (locked) / "0" (unlocked)
+ *   getvar warranty/unlocked -> boolean-ish fallbacks when
+ *   `bootloader-locked` is absent
  *
  * `libfastboot` is SSR-safe (no top-level browser access), so this
  * module is safe to import from a "use client" component.
@@ -197,15 +175,13 @@ function parseBool(s: string | null): boolean | null {
 }
 
 /**
- * Reads the full device state. `at-vboot-state` is authoritative for the
- * AVB/verified-boot lock; when absent, an unlocked *standard bootloader*
- * implies AVB is unlocked too (a standard unlock on these devices
- * disables verified boot). Never infer "locked" from the bootloader
- * variable: it is documented that `bootloader-locked` stays `1` while
- * AVB is unlocked. For the standard bootloader, `bootloader-locked`
- * (0/1) is authoritative, with boolean-ish `warranty`/`unlocked` as
- * fallbacks (a re-lock that only flips some of these is still unlocked,
- * so any "on" value that is present wins).
+ * Reads the full device state. `at-vboot-state` is authoritative for
+ * the AVB lock; when absent, an unlocked standard bootloader implies
+ * AVB is unlocked too (a standard unlock on these devices disables
+ * verified boot). Never infer "locked" from `bootloader-locked`: it
+ * stays `1` while AVB is unlocked. For the standard bootloader,
+ * `bootloader-locked` (0/1) wins, with boolean-ish `warranty`/`unlocked`
+ * fallbacks (any present "on" value wins).
  */
 async function readState(fb: FastbootDevice): Promise<DeviceState> {
   const [serial, product, bootloaderVersion, vboot, blLocked, warranty, unlocked] =
@@ -261,10 +237,7 @@ async function readState(fb: FastbootDevice): Promise<DeviceState> {
 export async function connectFastboot(opts?: {
   auto?: boolean;
 }): Promise<FastbootSession> {
-  // libfastboot is SSR-safe (no top-level browser access), so the
-  // old dynamic import is no longer needed.
-  // Verbose library logging (every command + response) to the console,
-  // to help diagnose bootloader protocol quirks.
+  // Verbose library logging (every command + response) to the console.
   setDebugLevel(2);
   const fb = new FastbootDevice();
 
@@ -276,13 +249,11 @@ export async function connectFastboot(opts?: {
     }
   }
 
-  // libfastboot's connect() never resets the device (AOSP's Windows
-  // Reset() is unsupported; a reset would drop the bootloader's
-  // staged state).
+  // Never resets the device: a reset would drop the bootloader's
+  // staged state.
   await fb.connect(opts?.auto ? { auto: true } : undefined);
-  // Version marker: if this line is missing from the console, the
-  // running bundle predates the current code (stale dev server or
-  // production build) and the trace can't be trusted.
+  // Version marker: if this line is missing, the running bundle
+  // predates the current code and the trace can't be trusted.
   logFastboot(
     "note",
     "unlock-tool v7 connected (libfastboot: AOSP-faithful fastboot host " +
@@ -310,11 +281,8 @@ export async function connectFastboot(opts?: {
     },
     stageCredential: async (data, onProgress) => {
       try {
-        // AOSP-faithful `download` sequence (libfastboot.download):
-        // DownloadCommand -> one continuous write of the whole buffer
-        // -> HandleResponse. Every transfer is time-boxed so a
-        // desynced device fails with a clear error instead of
-        // hanging the tool forever.
+        // AOSP-faithful `download`: DownloadCommand -> one continuous
+        // write of the whole buffer -> HandleResponse.
         await fb.download(data);
         if (onProgress) onProgress(1);
       } catch (e) {
@@ -342,8 +310,7 @@ export async function connectFastboot(opts?: {
     reboot: async () => {
       // The device usually drops the connection before the OKAY
       // arrives; a timeout/disconnect here means "rebooting", not a
-      // failure. The time-box also guards against a zombie read that
-      // never settles.
+      // failure.
       try {
         await withTimeout(fb.runCommand("reboot"), 10_000);
       } catch {
@@ -375,16 +342,13 @@ export async function connectFastboot(opts?: {
 
 /**
  * Waits until the device is ready to accept fastboot commands again.
- *
- * `flashing unlock`/`lock` writes a persistent flag; on many devices the
- * bootloader reboots as part of that operation, which drops the USB
- * connection, and the bootloader re-enumerates a moment later. But not
- * all: on some (including MT8167 Android Things boards) the command
- * simply completes and the device stays connected in fastboot. So probe
- * the existing session first, and only wait for a reconnect (libfastboot
+ * `flashing unlock`/`lock` reboots the bootloader on many devices (the
+ * USB drops, then re-enumerates), but on some — including MT8167
+ * Android Things boards — it completes without a reboot. So probe the
+ * existing session first and only wait for a reconnect (libfastboot
  * polls for the re-appearing device and re-opens it) if the device
- * actually went away. If it doesn't come back within the window, throw
- * ReconnectError so the caller can reset to the idle state.
+ * actually went away; if it doesn't come back within the window, throw
+ * ReconnectError so the caller can reset to idle.
  */
 async function waitUntilReady(fb: FastbootDevice): Promise<void> {
   // The command may still be finalizing on the device side (e.g. a

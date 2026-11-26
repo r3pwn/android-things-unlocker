@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 /**
- * Host-side (libusb) run of the Android Things AVB-unlock flow — a
- * diagnostic mirror of the browser WebUSB tool, using the same driver
- * mode the fastboot CLI uses (which completes the `download`/stage step
- * in ~20 ms on this board).
- *
- * If the browser's stage step times out but this completes, that
- * confirms the NAK behavior is a host-stack (browser WebUSB driver-mode)
- * NAK re-poll limitation, not a device or payload problem.
+ * Host-side (node-usb / libusb) run of the Android Things AVB-unlock
+ * flow — a diagnostic mirror of the browser WebUSB tool, using the
+ * same driver mode the fastboot CLI uses (which completes the
+ * `download`/stage step in ~20 ms on this board).
  *
  * Flow (mirrors the browser tool and at_auth_unlock.py):
  *   getvar state
@@ -29,11 +25,10 @@
  * --timeout N gives the payload write a finite endpoint transfer timeout
  * in ms (default 0 = infinite, the node-usb default).
  *
- * IMPORTANT: close the browser page (release the device from WebUSB)
- * before running — WebUSB holds the device exclusively. If the stage
- * step fails, the bootloader is left desynced (part of the declared
- * size received): POWER-CYCLE the device before retrying (a USB
- * replug does NOT reset the bootloader).
+ * IMPORTANT: close the browser page first — WebUSB holds the device
+ * exclusively. If the stage step fails, the bootloader is left
+ * desynced: POWER-CYCLE the device before retrying (a USB replug does
+ * NOT reset the bootloader).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";

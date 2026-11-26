@@ -1,26 +1,21 @@
 /**
  * Parses the Android Things unlock credential bundles in `creds/` and
- * writes them to `.env` as the UNLOCK_CREDENTIALS env var — the single
- * credentials source the app loads at runtime.
+ * writes them to `.env` as the UNLOCK_CREDENTIALS env var — the
+ * single credentials source the app loads at runtime. Drop the zip
+ * bundles exactly as downloaded from the Developer Console into
+ * `creds/` (no extraction needed). `creds/` and `.env` are gitignored,
+ * so the credentials never enter the repository; on Vercel, paste the
+ * same value into a UNLOCK_CREDENTIALS env var of type "Secret"
+ * (encrypted at rest), then redeploy.
  *
  * Usage:
- *   npm run prepare-creds                # parse creds/*.zip → write .env
- *   npm run prepare-creds -- --print     # also print the JSON value to stdout
- *   npm run prepare-creds -- --vercel    # hard gate: fail (exit 1, no write)
- *   npm run prepare-creds -- --print     # if the value exceeds Vercel's 64 KB
- *                                        # env-var budget, before you paste it
- *                                        # into the dashboard
- *
- * By default, exceeding the Vercel budget only warns: the value is still
- * valid for local use (no limit), it just won't fit on Vercel. Use
- * --vercel to make that a blocking error.
- *
- * Drop the zip bundles exactly as downloaded from the Android Things
- * Developer Console into `creds/` (no extraction needed), then run this.
- * Both `creds/` and `.env` are gitignored, so the credentials never enter
- * the repository. On Vercel, paste the same value into a
- * UNLOCK_CREDENTIALS env var of type "Secret" (encrypted at rest, cannot
- * be read back), then redeploy.
+ *   pnpm run prepare-creds               # parse creds/*.zip → write .env
+ *   pnpm run prepare-creds -- --print    # also print the value to stdout
+ *   pnpm run prepare-creds -- --vercel   # hard gate: exit 1 (no write) if
+ *                                        # the value exceeds Vercel's 64 KB
+ *                                        # env-var budget (default: only warn,
+ *                                        # since the value is still valid
+ *                                        # for local use regardless of size)
  *
  * The output contains the PUK private key. Keep it secret.
  */
@@ -61,18 +56,18 @@ function findOneMatch(names, re, desc, where) {
 }
 
 /**
- * Repairs a class of zip metadata inconsistency that JSZip cannot parse:
- * the Developer Console bundles have an end-of-central-directory record
- * whose `centralDirOffset + centralDirSize` does not reach the EOCD
- * (e.g. 6039 + 221 = 6260, but the EOCD sits at 6336). JSZip's "extra
- * bytes" heuristic reads that gap as prepended data (as in .crx files)
- * and shifts every read, so it then finds 0 central-dir records and
- * throws "Corrupted zip or bug: expected N records in central dir, got 0".
- * System unzip ignores the field and reads the file fine.
+ * Repairs a zip metadata inconsistency JSZip cannot parse: the
+ * Developer Console bundles have an EOCD whose
+ * `centralDirOffset + centralDirSize` does not reach the EOCD.
+ * JSZip's "extra bytes" heuristic reads that gap as prepended data
+ * (as in .crx files) and shifts every read, then throws "expected N
+ * records in central dir, got 0". System unzip ignores the field and
+ * reads the file fine.
  *
- * Fix: when a genuine central-file-header sits at `centralDirOffset`, the
- * offset is correct and only `centralDirSize` is short — patch it to
- * `eocdOffset - centralDirOffset`. Returns the (possibly patched) buffer.
+ * Fix: when a genuine central-file-header sits at `centralDirOffset`,
+ * the offset is correct and only `centralDirSize` is short — patch it
+ * to `eocdOffset - centralDirOffset`. Returns the (possibly patched)
+ * buffer.
  */
 function repairZipBuffer(buf) {
   const min = Math.max(0, buf.length - 22 - 65535);
@@ -124,10 +119,10 @@ async function fromZip(zipPath) {
 }
 
 /**
- * Writes UNLOCK_CREDENTIALS=<value> into .env: replaces any existing
- * UNLOCK_CREDENTIALS line(s), preserving all other lines/vars; creates
- * .env if it does not exist. The value is single-line compact JSON, so
- * it is safe unquoted in an env file.
+ * Writes UNLOCK_CREDENTIALS=<value> into .env, replacing any existing
+ * UNLOCK_CREDENTIALS line(s) and preserving the rest; creates the file
+ * if it does not exist. The value is single-line compact JSON: safe
+ * unquoted in an env file.
  */
 async function writeEnvFile(value) {
   let existing = "";
