@@ -57,6 +57,59 @@ function humanize(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Outcome of the pre-connect credential-match check. */
+type CredCheck =
+  | { kind: "ok"; set: string }
+  | { kind: "no-match" }
+  | { kind: "no-creds" }
+  | { kind: "unknown" };
+
+const CRED_CHECK_PREFIX = "at-unlocker:credcheck:";
+const CRED_CHECK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readCachedCredCheck(serial: string): CredCheck | null {
+  try {
+    const raw = window.localStorage.getItem(CRED_CHECK_PREFIX + serial);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as {
+      kind: string;
+      set?: string;
+      at: number;
+    };
+    const valid =
+      (v.kind === "ok" || v.kind === "no-match" || v.kind === "no-creds") &&
+      Date.now() - v.at < CRED_CHECK_TTL_MS;
+    if (!valid) {
+      window.localStorage.removeItem(CRED_CHECK_PREFIX + serial);
+      return null;
+    }
+    return v.kind === "ok"
+      ? { kind: "ok", set: v.set ?? "unknown" }
+      : { kind: v.kind as "no-match" | "no-creds" };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedCredCheck(
+  serial: string | null,
+  check: CredCheck,
+): void {
+  if (check.kind === "unknown" || !serial) return;
+  try {
+    window.localStorage.setItem(
+      CRED_CHECK_PREFIX + serial,
+      JSON.stringify({
+        kind: check.kind,
+        set: check.kind === "ok" ? check.set : undefined,
+        at: Date.now(),
+      }),
+    );
+  } catch {
+    // storage unavailable — the check still works, just isn't cached
+  }
+}
+
 function LockTag({ state }: { state: LockState }) {
   if (state === "unlocked") return <Tag color="orange">unlocked</Tag>;
   if (state === "locked") return <Tag color="green">locked</Tag>;
@@ -113,6 +166,52 @@ function UnlockTool() {
   const [statusText, setStatusText] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [matchedSet, setMatchedSet] = useState<string | null>(null);
+  const [credCheck, setCredCheck] = useState<CredCheck | null>(null);
+
+  // Pre-check for the AVB unlock: when the device is AVB-locked, read a
+  // challenge, sign it via the API, and see whether a credential set
+  // matches this device. The result is cached in localStorage (7-day
+  // TTL) keyed by the serial, so a reconnect skips the round-trip.
+  const runCredCheck = useCallback(
+    async (s: FastbootSession, st: DeviceState) => {
+      if (st.avb !== "locked") {
+        setCredCheck(null);
+        return;
+      }
+      const cached = st.serial ? readCachedCredCheck(st.serial) : null;
+      if (cached) {
+        setCredCheck(cached);
+        return;
+      }
+      let check: CredCheck;
+      try {
+        const challenge = await s.getChallenge();
+        const res = await fetch("/api/v1/unlock_challenge", {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: challenge as Uint8Array<ArrayBuffer>,
+        });
+        if (res.ok) {
+          check = {
+            kind: "ok",
+            set: res.headers.get("x-matched-credential-set") ?? "unknown",
+          };
+        } else if (res.status === 404) {
+          check = { kind: "no-match" };
+        } else if (res.status === 503) {
+          check = { kind: "no-creds" };
+        } else {
+          check = { kind: "unknown" };
+        }
+      } catch (e) {
+        console.error(e);
+        check = { kind: "unknown" };
+      }
+      writeCachedCredCheck(st.serial, check);
+      setCredCheck(check);
+    },
+    [],
+  );
 
   useEffect(() => {
     // `webUsbAvailable()` probes `navigator` — a stable browser feature
@@ -130,12 +229,13 @@ function UnlockTool() {
           const st = await s.getState();
           setState(st);
           setConnected(true);
+          if (st.avb === "locked") void runCredCheck(s, st);
         })
         .catch(() => {
           // No device / not in fastboot — stay idle.
         });
     }
-  }, []);
+  }, [runCredCheck]);
 
   const handleConnect = useCallback(async () => {
     if (usbOk !== true) {
@@ -153,12 +253,13 @@ function UnlockTool() {
       setState(st);
       setConnected(true);
       message.success(`Connected: ${st.serial ?? "device"}`);
+      if (st.avb === "locked") void runCredCheck(s, st);
     } catch (e) {
       setError(humanize(e));
     } finally {
       setConnecting(false);
     }
-  }, [usbOk, message]);
+  }, [usbOk, message, runCredCheck]);
 
   const handleDisconnect = useCallback(async () => {
     await sessionRef.current?.close();
@@ -166,6 +267,7 @@ function UnlockTool() {
     setConnected(false);
     setState(null);
     setMatchedSet(null);
+    setCredCheck(null);
   }, []);
 
   const handleRefresh = useCallback(async () => {
@@ -175,10 +277,11 @@ function UnlockTool() {
       const st = await s.getState();
       setState(st);
       setError(null);
+      if (st.avb === "locked") void runCredCheck(s, st);
     } catch (e) {
       setError(humanize(e));
     }
-  }, []);
+  }, [runCredCheck]);
 
   const handleReboot = useCallback(async () => {
     const s = sessionRef.current;
@@ -248,7 +351,9 @@ function UnlockTool() {
       await s.stageCredential(cred, (p) => setProgress(p));
       setStatusText("Unlocking verified boot…");
       await s.unlockVboot();
-      setState(await refreshState(s));
+      const st = await refreshState(s);
+      setState(st);
+      void runCredCheck(s, st);
       message.success("Verified boot (AVB) unlocked");
     } catch (e) {
       console.error(e);
@@ -258,7 +363,7 @@ function UnlockTool() {
       setStatusText(null);
       setProgress(null);
     }
-  }, [message, refreshState]);
+  }, [message, refreshState, runCredCheck]);
 
   const handleAvbRelock = useCallback(async () => {
     const s = sessionRef.current;
@@ -268,7 +373,9 @@ function UnlockTool() {
     try {
       setStatusText("Re-locking verified boot…");
       await s.relockVboot();
-      setState(await refreshState(s));
+      const st = await refreshState(s);
+      setState(st);
+      void runCredCheck(s, st);
       message.success("Verified boot (AVB) re-locked");
     } catch (e) {
       console.error(e);
@@ -277,7 +384,7 @@ function UnlockTool() {
       setBusy(null);
       setStatusText(null);
     }
-  }, [message, refreshState]);
+  }, [message, refreshState, runCredCheck]);
 
   const handleBootloader = useCallback(
     async (unlock: boolean) => {
@@ -492,6 +599,15 @@ function UnlockTool() {
                     <LockTag state={state?.bootloader ?? "unknown"} />
                   ),
                 },
+                ...(state?.avb === "locked" && credCheck?.kind === "ok"
+                  ? [
+                      {
+                        key: "credset",
+                        label: "Credential set",
+                        children: <Tag color="blue">{credCheck.set}</Tag>,
+                      },
+                    ]
+                  : []),
               ]}
             />
 
@@ -524,6 +640,24 @@ function UnlockTool() {
             <Divider style={{ margin: "16px 0" }} />
 
             {/* --- actions -------------------------------------------- */}
+            {state?.avb === "locked" && credCheck?.kind === "no-match" && (
+              <Alert
+                type="warning"
+                showIcon
+                title="No matching credential set"
+                description="No loaded credential set matches this device's product ID. The AVB unlock is disabled — load this device's credentials first."
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            {state?.avb === "locked" && credCheck?.kind === "no-creds" && (
+              <Alert
+                type="warning"
+                showIcon
+                title="No credential sets loaded"
+                description="The server has no UNLOCK_CREDENTIALS loaded. The AVB unlock is disabled."
+                style={{ marginBottom: 16 }}
+              />
+            )}
             <Space
               style={{
                 width: "100%",
@@ -539,7 +673,11 @@ function UnlockTool() {
                 {state?.avb === "locked" && (
                   <Button
                     type="primary"
-                    disabled={busy !== null}
+                    disabled={
+                      busy !== null ||
+                      credCheck?.kind === "no-match" ||
+                      credCheck?.kind === "no-creds"
+                    }
                     onClick={confirmAvbUnlock}
                   >
                     AVB unlock
