@@ -223,6 +223,30 @@ Content-Type: application/json
 }
 ```
 
+### GET /api/v1/credentials
+
+Lists the loaded credential sets — **names + product ID hashes only**
+(no certificates, no keys — the private key is never served):
+
+```
+GET /api/v1/credentials
+Authorization: Bearer <token>   (if UNLOCK_API_TOKEN is set)
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+
+[
+  { "name": "amber", "productIdHash": "511d37b1…" }
+]
+```
+
+An empty array (`[]`) is a valid answer when no sets are loaded. The
+data only changes on a fresh deployment, so clients are expected to
+cache it for a long time (the WebUSB tool caches it in `localStorage`
+for 30 days) and use it to check, before unlocking, whether a loaded
+set matches the device's challenge product ID hash.
+
 ## Testing
 
 - `pnpm test` — unit suite (vitest) for the credential-side protocol:

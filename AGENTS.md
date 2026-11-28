@@ -41,4 +41,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## API/UI constraints
 
-- `POST /api/v1/unlock_challenge` only: raw 52-byte body, raw credential out. No GET endpoint; no exposing the number of loaded credential sets to the UI; credentials via the `UNLOCK_CREDENTIALS` env var only.
+- API: `POST /api/v1/unlock_challenge` (raw 52-byte body, raw credential out) and `GET /api/v1/credentials` (per loaded set: `name` + `productIdHash` only — never certificates/keys). The credential list itself is not shown in the UI (only the matched set name is, and the browser caches the list in `localStorage` with a 30-day TTL); the connect-time check matches the device's challenge hash against the cached list — it does NOT call `unlock_challenge`. Credentials via the `UNLOCK_CREDENTIALS` env var only.
