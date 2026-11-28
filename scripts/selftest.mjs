@@ -11,6 +11,8 @@
  *      serves both, and the response is verified byte-for-byte and
  *      cryptographically (PKCS#1 v1.5 + SHA-512, per at_auth_unlock.py),
  *   3. an unknown product ID → 404.
+ *   4. GET /api/v1/credentials lists the loaded sets (name + product ID
+ *      hash only; empty array when no sets are loaded).
  *
  * Both servers get UNLOCK_CREDENTIALS/UNLOCK_API_TOKEN set explicitly on
  * the process (Next.js .env files never override existing process env),
@@ -201,6 +203,15 @@ async function main() {
     );
     const empty = await post(BASE, Buffer.alloc(0));
     check(`empty body → 400 (got ${empty.status})`, empty.status === 400);
+
+    console.log("\n[3] GET /api/v1/credentials with no sets → 200 []");
+    const lc0 = await fetch(`${BASE}/api/v1/credentials`);
+    check(`status 200 (got ${lc0.status})`, lc0.status === 200);
+    const lc0Body = await lc0.json();
+    check(
+      "empty array",
+      Array.isArray(lc0Body) && lc0Body.length === 0,
+    );
   } finally {
     killServer(noCreds);
   }
@@ -257,6 +268,30 @@ async function main() {
     check(
       `unknown product → 404 (got ${unknown.status})`,
       unknown.status === 404,
+    );
+
+    console.log("\n[6] GET /api/v1/credentials lists the loaded sets");
+    const lc = await fetch(`${CRED_BASE}/api/v1/credentials`);
+    check(`status 200 (got ${lc.status})`, lc.status === 200);
+    const lcBody = await lc.json();
+    const byName = Object.fromEntries(
+      lcBody.map((c) => [c.name, c.productIdHash]),
+    );
+    check(
+      "set A listed with its product ID hash",
+      byName["selftest-a"] ===
+        crypto.createHash("sha256").update("selftest-product-a").digest("hex"),
+    );
+    check(
+      "set B listed with its product ID hash",
+      byName["selftest-b"] ===
+        crypto.createHash("sha256").update("selftest-product-b").digest("hex"),
+    );
+    check(
+      "entries carry only name + productIdHash (no cert/key material)",
+      lcBody.every(
+        (c) => Object.keys(c).sort().join(",") === "name,productIdHash",
+      ),
     );
   } finally {
     killServer(withCreds);

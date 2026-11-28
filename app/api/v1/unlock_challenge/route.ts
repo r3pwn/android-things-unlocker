@@ -7,6 +7,7 @@ import {
   UnlockError,
 } from "@/lib/avb-unlock";
 import { loadCredentialSets } from "@/lib/credential-store";
+import { requireAuth } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
 
@@ -26,20 +27,6 @@ function errorResponse(
   detail: string,
 ): NextResponse {
   return NextResponse.json({ ok: false, error: code, detail }, { status });
-}
-
-/**
- * Optional hardening: when `UNLOCK_API_TOKEN` is set, requests must
- * carry `Authorization: Bearer <token>`. Unset → open (the endpoint
- * only ever returns non-secret data).
- */
-function requireAuth(request: Request): NextResponse | null {
-  const token = process.env.UNLOCK_API_TOKEN;
-  if (!token) return null;
-  if ((request.headers.get("authorization") ?? "") === `Bearer ${token}`) {
-    return null;
-  }
-  return errorResponse(401, "UNAUTHORIZED", "missing or invalid Authorization header");
 }
 
 export async function POST(request: Request) {
