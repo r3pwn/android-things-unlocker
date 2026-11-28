@@ -64,46 +64,37 @@ type CredCheck =
   | { kind: "no-creds" }
   | { kind: "unknown" };
 
-const CRED_CHECK_PREFIX = "at-unlocker:credcheck:";
-const CRED_CHECK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** One entry of GET /api/v1/credentials. */
+interface CredentialListEntry {
+  name: string;
+  productIdHash: string;
+}
 
-function readCachedCredCheck(serial: string): CredCheck | null {
+// The list only changes on a fresh deployment, so it is cached in
+// localStorage for 30 days.
+const CRED_LIST_KEY = "at-unlocker:credential-list";
+const CRED_LIST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function readCachedCredentialList(): CredentialListEntry[] | null {
   try {
-    const raw = window.localStorage.getItem(CRED_CHECK_PREFIX + serial);
+    const raw = window.localStorage.getItem(CRED_LIST_KEY);
     if (!raw) return null;
-    const v = JSON.parse(raw) as {
-      kind: string;
-      set?: string;
-      at: number;
-    };
-    const valid =
-      (v.kind === "ok" || v.kind === "no-match" || v.kind === "no-creds") &&
-      Date.now() - v.at < CRED_CHECK_TTL_MS;
-    if (!valid) {
-      window.localStorage.removeItem(CRED_CHECK_PREFIX + serial);
+    const v = JSON.parse(raw) as { list: unknown; at: number };
+    if (!Array.isArray(v.list) || Date.now() - v.at > CRED_LIST_TTL_MS) {
+      window.localStorage.removeItem(CRED_LIST_KEY);
       return null;
     }
-    return v.kind === "ok"
-      ? { kind: "ok", set: v.set ?? "unknown" }
-      : { kind: v.kind as "no-match" | "no-creds" };
+    return v.list as CredentialListEntry[];
   } catch {
     return null;
   }
 }
 
-function writeCachedCredCheck(
-  serial: string | null,
-  check: CredCheck,
-): void {
-  if (check.kind === "unknown" || !serial) return;
+function writeCachedCredentialList(list: CredentialListEntry[]): void {
   try {
     window.localStorage.setItem(
-      CRED_CHECK_PREFIX + serial,
-      JSON.stringify({
-        kind: check.kind,
-        set: check.kind === "ok" ? check.set : undefined,
-        at: Date.now(),
-      }),
+      CRED_LIST_KEY,
+      JSON.stringify({ list, at: Date.now() }),
     );
   } catch {
     // storage unavailable — the check still works, just isn't cached
@@ -169,46 +160,55 @@ function UnlockTool() {
   const [credCheck, setCredCheck] = useState<CredCheck | null>(null);
 
   // Pre-check for the AVB unlock: when the device is AVB-locked, read a
-  // challenge, sign it via the API, and see whether a credential set
-  // matches this device. The result is cached in localStorage (7-day
-  // TTL) keyed by the serial, so a reconnect skips the round-trip.
+  // challenge for its product ID hash and match it against the loaded
+  // credential sets (GET /api/v1/credentials, cached in localStorage for
+  // 30 days — the list only changes on a fresh deployment). No signing
+  // round-trip: the unlock flow does that with a fresh challenge.
   const runCredCheck = useCallback(
     async (s: FastbootSession, st: DeviceState) => {
       if (st.avb !== "locked") {
         setCredCheck(null);
         return;
       }
-      const cached = st.serial ? readCachedCredCheck(st.serial) : null;
-      if (cached) {
-        setCredCheck(cached);
+      let list = readCachedCredentialList();
+      if (!list) {
+        try {
+          const res = await fetch("/api/v1/credentials", {
+            cache: "no-store",
+          });
+          if (!res.ok) {
+            console.error("credential list fetch failed:", res.status);
+            setCredCheck({ kind: "unknown" });
+            return;
+          }
+          list = (await res.json()) as CredentialListEntry[];
+          writeCachedCredentialList(list);
+        } catch (e) {
+          console.error(e);
+          setCredCheck({ kind: "unknown" });
+          return;
+        }
+      }
+      if (list.length === 0) {
+        setCredCheck({ kind: "no-creds" });
         return;
       }
-      let check: CredCheck;
+      let hash: string;
       try {
         const challenge = await s.getChallenge();
-        const res = await fetch("/api/v1/unlock_challenge", {
-          method: "POST",
-          headers: { "content-type": "application/octet-stream" },
-          body: challenge as Uint8Array<ArrayBuffer>,
-        });
-        if (res.ok) {
-          check = {
-            kind: "ok",
-            set: res.headers.get("x-matched-credential-set") ?? "unknown",
-          };
-        } else if (res.status === 404) {
-          check = { kind: "no-match" };
-        } else if (res.status === 503) {
-          check = { kind: "no-creds" };
-        } else {
-          check = { kind: "unknown" };
-        }
+        hash = Array.from(
+          challenge.subarray(4, 4 + 32),
+          (b) => b.toString(16).padStart(2, "0"),
+        ).join("");
       } catch (e) {
         console.error(e);
-        check = { kind: "unknown" };
+        setCredCheck({ kind: "unknown" });
+        return;
       }
-      writeCachedCredCheck(st.serial, check);
-      setCredCheck(check);
+      const match = list.find((c) => c.productIdHash === hash);
+      setCredCheck(
+        match ? { kind: "ok", set: match.name } : { kind: "no-match" },
+      );
     },
     [],
   );
